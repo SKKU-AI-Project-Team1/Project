@@ -1,0 +1,1 @@
+path : /home/ubuntu/ai/patent_valid_20.csv, test_accuracy: 46.862%
