@@ -11,6 +11,7 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import BertConfig
 from transformers import BertModel
 from transformers import AlbertModel
+from transformers import AutoTokenizer, AutoModel
 
 
 print(f'torch version: {torch.__version__}')
@@ -28,9 +29,9 @@ test = pd.read_csv('../../data/valid_data.csv')
 print('train',train.shape)
 print('test',test.shape)
 
-MODEL_NAME = 'kykim/bert-kor-base'
+# MODEL_NAME = 'kykim/bert-kor-base'
 
-# MODEL_NAME='beomi/KcELECTRA-base-v2022'
+MODEL_NAME='beomi/KcELECTRA-base-v2022'
 
 
 
@@ -42,7 +43,7 @@ class PatentDataset(Dataset):
         self.data = dataframe
         # Huggingface 토크나이저 생성
 
-        self.tokenizer = BertTokenizerFast.from_pretrained(tokenizer_pretrained)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_pretrained)
 
     def __len__(self):
         return len(self.data)
@@ -98,11 +99,11 @@ inputs = {k: v.to(device) for k, v in inputs.items()}
 
 
 
-config = BertConfig.from_pretrained(MODEL_NAME)
+# config = BertConfig.from_pretrained(MODEL_NAME)
 
 
 # 모델 생성
-model = BertModel.from_pretrained(MODEL_NAME).to(device)
+model = AutoModel.from_pretrained(MODEL_NAME).to(device)
 
 
 output = model(**inputs)
@@ -114,12 +115,12 @@ print(fc_output.shape)
 print(fc_output)
 print(fc_output.argmax(dim=1))
 
-class FineTuningBertModel(nn.Module):
+class FineTuningElectraModel(nn.Module):
     def __init__(self, bert_pretrained, dropout_rate=0.5):
         # 부모클래스 초기화
         super().__init__()
         # 사전학습 모델 지정
-        self.bert = BertModel.from_pretrained(bert_pretrained)
+        self.bert = AutoModel.from_pretrained(bert_pretrained)
 
         # dropout 설정
         self.dropout = nn.Dropout(p=dropout_rate)
@@ -137,7 +138,7 @@ class FineTuningBertModel(nn.Module):
         x = self.fc(x)
         return x
     
-BERT_model = FineTuningBertModel(MODEL_NAME)
+BERT_model = FineTuningElectraModel(MODEL_NAME)
 BERT_model.to(device)
 
 # loss 정의: CrossEntropyLoss
@@ -249,10 +250,10 @@ def model_evaluate(model, data_loader, loss_fn, device):
         return running_loss / len(data_loader.dataset), acc
     
 # 최대 Epoch을 지정합니다.
-num_epochs = 9
+num_epochs = 6
 
 # checkpoint로 저장할 모델의 이름을 정의 합니다.
-model_name = 'bert-kor-base'
+model_name = 'koelectra-base'
 
 min_loss = np.inf
 
@@ -272,9 +273,9 @@ for epoch in range(num_epochs):
         torch.save(BERT_model.state_dict(), f'{model_name}.pth')
 
     # Epoch 별 결과를 출력합니다.
-    print(f'final epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}')
-    line = f'final epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}\n'
+    print(f'koelectra epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}')
+    line = f'koelectra epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}\n'
     file = open("log.txt","a")
     file.write(line)
     file.close
-torch.save(BERT_model.state_dict(), 'final_base_model.pth')
+torch.save(BERT_model.state_dict(), 'koelectra_base_model.pth')

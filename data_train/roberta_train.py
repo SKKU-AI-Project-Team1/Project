@@ -28,9 +28,9 @@ test = pd.read_csv('../../data/valid_data.csv')
 print('train',train.shape)
 print('test',test.shape)
 
-MODEL_NAME = 'kykim/bert-kor-base'
+# MODEL_NAME = 'kykim/bert-kor-base'
 
-# MODEL_NAME='beomi/KcELECTRA-base-v2022'
+MODEL_NAME='klue/roberta-base'
 
 
 
@@ -249,7 +249,7 @@ def model_evaluate(model, data_loader, loss_fn, device):
         return running_loss / len(data_loader.dataset), acc
     
 # 최대 Epoch을 지정합니다.
-num_epochs = 9
+num_epochs = 6
 
 # checkpoint로 저장할 모델의 이름을 정의 합니다.
 model_name = 'bert-kor-base'
@@ -272,9 +272,9 @@ for epoch in range(num_epochs):
         torch.save(BERT_model.state_dict(), f'{model_name}.pth')
 
     # Epoch 별 결과를 출력합니다.
-    print(f'final epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}')
-    line = f'final epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}\n'
+    print(f'roberta epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}')
+    line = f'roberta epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}\n'
     file = open("log.txt","a")
     file.write(line)
     file.close
-torch.save(BERT_model.state_dict(), 'final_base_model.pth')
+torch.save(BERT_model.state_dict(), 'roberta_base_model.pth')

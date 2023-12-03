@@ -11,7 +11,7 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import BertConfig
 from transformers import BertModel
 from transformers import AlbertModel
-
+from sklearn.model_selection import StratifiedKFold
 
 print(f'torch version: {torch.__version__}')
 print(f'torchvision version: {torchvision.__version__}')
@@ -23,14 +23,13 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 print(f'사용 디바이스: {device}')
 
 
-train = pd.read_csv('../../data/sampled20_train_data.csv')
-test = pd.read_csv('../../data/valid_data.csv')
+train = pd.read_csv('../../data/fillNAN_train_data.csv')
+test = pd.read_csv('../../data/fillNAN_valid_data.csv')
 print('train',train.shape)
 print('test',test.shape)
 
 MODEL_NAME = 'kykim/bert-kor-base'
-
-# MODEL_NAME='beomi/KcELECTRA-base-v2022'
+# MODEL_NAME='kykim/albert-kor-base'
 
 
 
@@ -49,7 +48,7 @@ class PatentDataset(Dataset):
 
     def __getitem__(self, idx): # 클래스의 인덱스에 접근할 때 자동으로 호출되는 메서드
         # iloc : 행번호로 선택하는 방법
-        sentence = self.data.iloc[idx]['invention_title']
+        sentence = self.data.iloc[idx]['abstract']
         label = self.data.iloc[idx]['ipc_subclass_num']
 
         # 토큰화 처리
@@ -78,9 +77,24 @@ class PatentDataset(Dataset):
 # 토크나이저 지정
 tokenizer_pretrained = MODEL_NAME
 
-# train, test 데이터셋 생성
-train_data = PatentDataset(train, tokenizer_pretrained)
-test_data = PatentDataset(test, tokenizer_pretrained)
+skf  =StratifiedKFold(n_splits=5)
+train_data = None
+test_data = None
+for train_index, val_index in skf.split(train, train['ipc_subclass_num']):
+    X_train=train['abstract'][val_index]
+    Y_train = train['ipc_subclass_num'][val_index]
+    train20_data=pd.concat([X_train, Y_train], axis=1)
+    train_data = PatentDataset(train20_data, tokenizer_pretrained)
+    break
+for train_index, val_index in skf.split(test, test['ipc_subclass_num']):
+    X_train = test['abstract'][val_index]
+    Y_train = test['ipc_subclass_num'][val_index]
+    test20_data=pd.concat([X_train, Y_train], axis=1)
+    test_data = PatentDataset(test20_data, tokenizer_pretrained)
+    break
+# # train, test 데이터셋 생성
+# train_data = PatentDataset(train, tokenizer_pretrained)
+# test_data = PatentDataset(test, tokenizer_pretrained)
 
 # DataLoader로 이전에 생성한 Dataset를 지정하여, batch 구성, shuffle, num_workers 등을 설정합니다.
 train_loader = DataLoader(train_data, batch_size=8, shuffle=True, num_workers=8)
@@ -249,7 +263,7 @@ def model_evaluate(model, data_loader, loss_fn, device):
         return running_loss / len(data_loader.dataset), acc
     
 # 최대 Epoch을 지정합니다.
-num_epochs = 9
+num_epochs = 6
 
 # checkpoint로 저장할 모델의 이름을 정의 합니다.
 model_name = 'bert-kor-base'
@@ -272,9 +286,9 @@ for epoch in range(num_epochs):
         torch.save(BERT_model.state_dict(), f'{model_name}.pth')
 
     # Epoch 별 결과를 출력합니다.
-    print(f'final epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}')
-    line = f'final epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}\n'
+    print(f'epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}')
+    line = f'epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}\n'
     file = open("log.txt","a")
     file.write(line)
     file.close
-torch.save(BERT_model.state_dict(), 'final_base_model.pth')
+torch.save(BERT_model.state_dict(), 'abstract_base_model.pth')
