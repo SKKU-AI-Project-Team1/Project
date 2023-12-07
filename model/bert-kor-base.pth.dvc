@@ -1,0 +1,5 @@
+outs:
+- md5: 63a583021e115fc13043a0e6d109cd56
+  size: 475007086
+  hash: md5
+  path: bert-kor-base.pth

@@ -11,24 +11,26 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import BertConfig
 from transformers import BertModel
 from transformers import AlbertModel
+from transformers import AutoTokenizer, AutoModel
 
 
 print(f'torch version: {torch.__version__}')
 print(f'torchvision version: {torchvision.__version__}')
+
 os.environ["TOKENIZERS_PARALLELISM"] = 'true'
+
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 print(f'사용 디바이스: {device}')
 
 
-train = pd.read_csv('../../data/train_data_v1.3.csv')
-test = pd.read_csv('../../data/valid_data_v1.3.csv')
+train = pd.read_csv('../../data/sampled20_train_data.csv')
+test = pd.read_csv('../../data/valid_data.csv')
 print('train',train.shape)
 print('test',test.shape)
 
-MODEL_NAME = 'kykim/bert-kor-base'
 
-
+MODEL_NAME='beomi/KcELECTRA-base-v2022'
 
 
 
@@ -36,17 +38,14 @@ MODEL_NAME = 'kykim/bert-kor-base'
 class PatentDataset(Dataset):
 
     def __init__(self, dataframe, tokenizer_pretrained):
-
         self.data = dataframe
 
-
-        self.tokenizer = BertTokenizerFast.from_pretrained(tokenizer_pretrained)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_pretrained)
 
     def __len__(self):
         return len(self.data)
 
-    def __getitem__(self, idx): 
-
+    def __getitem__(self, idx):
         sentence = self.data.iloc[idx]['invention_title']
         label = self.data.iloc[idx]['ipc_subclass_num']
 
@@ -63,23 +62,22 @@ class PatentDataset(Dataset):
         attention_mask = tokens['attention_mask'].squeeze(0) 
         token_type_ids = torch.zeros_like(attention_mask)
 
+
         return {
             'input_ids': input_ids,
             'attention_mask': attention_mask,
             'token_type_ids': token_type_ids,
         }, torch.tensor(label)
     
-# 토크나이저 지정
+
 tokenizer_pretrained = MODEL_NAME
 
-# train, test 데이터셋 생성
+
 train_data = PatentDataset(train, tokenizer_pretrained)
 test_data = PatentDataset(test, tokenizer_pretrained)
 
-
 train_loader = DataLoader(train_data, batch_size=8, shuffle=True, num_workers=8)
 test_loader = DataLoader(test_data, batch_size=8, shuffle=True, num_workers=8)
-
 print('train_loader',train_loader)
 print('test_loader',test_loader)
 
@@ -91,11 +89,10 @@ inputs = {k: v.to(device) for k, v in inputs.items()}
 
 
 
-config = BertConfig.from_pretrained(MODEL_NAME)
 
 
-
-model = BertModel.from_pretrained(MODEL_NAME).to(device)
+# 모델 생성
+model = AutoModel.from_pretrained(MODEL_NAME).to(device)
 
 
 output = model(**inputs)
@@ -107,53 +104,42 @@ print(fc_output.shape)
 print(fc_output)
 print(fc_output.argmax(dim=1))
 
-class FineTuningBertModel(nn.Module):
+class FineTuningElectraModel(nn.Module):
     def __init__(self, bert_pretrained, dropout_rate=0.5):
 
         super().__init__()
-
-        self.bert = BertModel.from_pretrained(bert_pretrained)
-
+        self.bert = AutoModel.from_pretrained(bert_pretrained)
 
         self.dropout = nn.Dropout(p=dropout_rate)
-
         self.fc = nn.Linear(768, 489)
 
     def forward(self, input_ids, attention_mask, token_type_ids):
-
         output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-
         last_hidden_state = output['last_hidden_state']
-
         x = self.dropout(last_hidden_state[:, 0, :])
-
         x = self.fc(x)
         return x
     
-BERT_model = FineTuningBertModel(MODEL_NAME)
+BERT_model = FineTuningElectraModel(MODEL_NAME)
 BERT_model.to(device)
 
-
 loss_fn = nn.CrossEntropyLoss()
-
 
 optimizer = optim.Adam(BERT_model.parameters(), lr=1e-5)
 
 from tqdm import tqdm 
 
 def model_train(model, data_loader, loss_fn, optimizer, device):
-
     model.train()
 
     running_loss = 0
     corr = 0
     counts = 0
 
-
     prograss_bar = tqdm(data_loader, unit='batch', total=len(data_loader), mininterval=1)
 
-    for idx, (inputs, labels) in enumerate(prograss_bar):
 
+    for idx, (inputs, labels) in enumerate(prograss_bar):
         inputs = {k:v.to(device) for k, v in inputs.items()}
         labels = labels.to(device)
 
@@ -161,7 +147,6 @@ def model_train(model, data_loader, loss_fn, optimizer, device):
 
 
         output = model(**inputs)
-
 
         loss = loss_fn(output, labels)
 
@@ -174,10 +159,8 @@ def model_train(model, data_loader, loss_fn, optimizer, device):
 
         _, index = output.max(dim=1)
 
-
         corr += index.eq(labels).sum().item()
         counts += len(labels)
-
 
         running_loss += loss.item() * labels.size(0)
 
@@ -185,8 +168,8 @@ def model_train(model, data_loader, loss_fn, optimizer, device):
         prograss_bar.set_description(f"training loss: {running_loss/(idx+1):.5f}, training accuracy: {corr / counts:.5f}")
 
 
-    acc = corr / len(data_loader.dataset)
 
+    acc = corr / len(data_loader.dataset)
 
     return running_loss / len(data_loader.dataset), acc
 
@@ -194,19 +177,21 @@ def model_evaluate(model, data_loader, loss_fn, device):
 
     model.eval()
 
+
     with torch.no_grad():
 
         corr = 0
         running_loss = 0
 
-        # 배치별 evaluation을 진행합니다.
+
         for inputs, labels in data_loader:
 
             inputs = {k:v.to(device) for k, v in inputs.items()}
             labels = labels.to(device)
 
 
-            output = model(**inputs) 
+            output = model(**inputs) # (8,2)
+
 
             _, index = output.max(dim=1)
 
@@ -218,15 +203,14 @@ def model_evaluate(model, data_loader, loss_fn, device):
         # validation 정확도 계산
         acc = corr / len(data_loader.dataset)
 
-        # 결과를 반환합니다.
-        # val_loss, val_acc
+
         return running_loss / len(data_loader.dataset), acc
     
 # 최대 Epoch을 지정합니다.
-num_epochs = 9
+num_epochs = 6
 
 # checkpoint로 저장할 모델의 이름을 정의 합니다.
-model_name = 'bert-kor-base'
+model_name = 'koelectra-base'
 
 min_loss = np.inf
 
@@ -246,9 +230,9 @@ for epoch in range(num_epochs):
         torch.save(BERT_model.state_dict(), f'{model_name}.pth')
 
     # Epoch 별 결과를 출력합니다.
-    print(f'final epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}')
-    line = f'final epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}\n'
+    print(f'koelectra epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}')
+    line = f'koelectra epoch {epoch+1:02d}, loss: {train_loss:.5f}, acc: {train_acc:.5f}, val_loss: {val_loss:.5f}, val_accuracy: {val_acc:.5f}\n'
     file = open("log.txt","a")
     file.write(line)
     file.close
-torch.save(BERT_model.state_dict(), 'final_base_model.pth')
+torch.save(BERT_model.state_dict(), 'koelectra_base_model.pth')

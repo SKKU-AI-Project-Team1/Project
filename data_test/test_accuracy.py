@@ -13,11 +13,15 @@ from transformers import BertTokenizerFast
 from torch.utils.data import Dataset, DataLoader
 import random
 import argparse
+from sklearn import metrics
+from sklearn.metrics import confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 MODEL_NAME = 'kykim/bert-kor-base'
 
 # 인자값을 받을 수 있는 인스턴스 생성
-parser = argparse.ArgumentParser(description='사용법 테스트입니다.')
+parser = argparse.ArgumentParser(description='file path 받기')
 
 # 입력받을 인자값 등록
 parser.add_argument('--d', required=True, help='Test File Path')
@@ -51,7 +55,7 @@ class FineTuningBertModel(nn.Module):
         # dropout 설정
         self.dropout = nn.Dropout(p=dropout_rate)
         # 최종 출력층 정의
-        self.fc = nn.Linear(768, 564)
+        self.fc = nn.Linear(768, 489)
 
     def forward(self, input_ids, attention_mask, token_type_ids):
         # 입력을 pre-trained bert model 로 대입
@@ -85,9 +89,9 @@ class Predictor():
             add_special_tokens=True  # 스페셜 토큰 적용
         )
         tokens.to(device)
-        prediction = self.model(**tokens) # (1, 2)
+        prediction = self.model(**tokens) 
 
-        prediction = F.softmax(prediction, dim=1) # (1,2)
+        prediction = F.softmax(prediction, dim=1) 
 
         output = prediction.argmax(dim=1).item()
 
@@ -96,21 +100,20 @@ class Predictor():
 
 
 
-# Huggingface 토크나이저 생성
+
 tokenizer = BertTokenizerFast.from_pretrained(MODEL_NAME)
 
 labels = {}
-for i in range(564):
+for i in range(489):
   labels[i] = i
-print(labels)
-# Predictor 인스턴스를 생성합니다.
 predictor = Predictor(BERT_model_test, tokenizer, labels)
 
+cm =[[0 for i in range(489)] for j in range(489)]
+y_pred = []
 
-# 사용자 입력에 대하여 예측 후 출력을 낼 수 있는 간단한 함수를 생성합니다.
-def test(predictor, path):
+def test(predictor, path, model_path):
     test_data=pd.read_csv(path)
-    test_data=test_data[["title", "label"]]
+    test_data=test_data[["abstract", "ipc_subclass_num"]]
     count =0
     answer_count=0
     print(f"total length : {len(test_data)}")
@@ -118,22 +121,23 @@ def test(predictor, path):
         count +=1
         if count%500==0:
             print(f"current {count}")
-        sentence=test_data.iloc[i]["title"]
-        answer = test_data.iloc[i]["label"]
+        sentence=test_data.iloc[i]["abstract"]
+        answer = test_data.iloc[i]["ipc_subclass_num"]
         result=predictor.predict(sentence)
+        cm[answer][result] +=1
+        # y_pred.append(result)
         if answer==result:
             answer_count +=1
       
-    # input_sentence = input('문장을 입력해 주세요: ')
-    # predictor.predict(input_sentence)
-    # print("input text : ",input_sentence)
     prob = answer_count/count
-    print(f'test_accuracy는 {prob*100:.3f}% 입니다.')
-    line = f'path : {path}, test_accuracy: {prob*100:.3f}%\n'
+    print(f'path : {path}, model : {model_path} test_accuracy는 {prob*100:.3f}% 입니다.')
+    line = f'path : {path}, model : {model_path} test_accuracy: {prob*100:.3f}%\n'
     file = open("test_log.txt","a")
     file.write(line)
     file.close
 
-data_path = "/home/ubuntu/ai/patent_valid_20.csv"
-# class 분류 예시
-test(predictor, data_path)
+test(predictor, data_path, model_path)
+sns.heatmap(cm, annot=True, cmap='Blues')
+plt.xlabel('Predicted')
+plt.ylabel('True')
+plt.savefig('confunsion.jpg',format='jpeg')
